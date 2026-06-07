@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+.react-datepicker-popper {
+  z-index: 9999 !important;
+}
+
+.react-flow__viewport-portal {
+  z-index: 0;
+}
+
+.react-flow__edges {
+  z-index: 5;
+}
+
+.react-flow__nodes {
+  z-index: 10;
+}
+
+.react-flow,
+.react-flow__pane {
+  background: transparent !important;
+}
