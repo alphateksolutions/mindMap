@@ -1,106 +1,158 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { parseISO } from "date-fns";
-import { X, Trash2, Clock } from "lucide-react";
+import { Clock, FileText, Info, Tags, Trash2, X } from "lucide-react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import toast from "react-hot-toast";
 import { useStore } from "../../store/useStore";
 import { getComputedStatus } from "../../utils";
 
+function Section({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+        {icon}
+        {title}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function FieldLabel({ children }: { children: ReactNode }) {
+  return <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-400">{children}</label>;
+}
+
+const inputClass = "w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100";
+
 export default function RightPanel() {
   const { nodes, selectedNodeId, setSelectedNode, updateNode, deleteNode } = useStore();
   const node = nodes.find(n => n.id === selectedNodeId);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (node) {
       setTitle(node.title);
       setContent(node.content);
+      setShowDeleteConfirm(false);
     }
   }, [node?.id, node?.title, node?.content]);
 
-  if (!node) return null;
+  const hasTextChanges = useMemo(() => Boolean(node && (title !== node.title || content !== node.content)), [content, node, title]);
 
   const saveTextFields = () => {
-    if (title !== node.title || content !== node.content) {
-      updateNode(node.id, { title, content });
-    }
+    if (!node || !hasTextChanges) return;
+    updateNode(node.id, { title, content });
+    toast.success("Da luu node");
   };
 
   const handleDelete = () => {
-    if (confirm("Bạn có chắc muốn xóa node này? Toàn bộ subtask/step con cũng sẽ bị xóa.")) {
-      deleteNode(node.id);
-      toast.success("Đã xóa node");
-    }
+    if (!node) return;
+    deleteNode(node.id);
+    setShowDeleteConfirm(false);
+    toast.success("Da xoa node");
   };
+
+  if (!node) {
+    return (
+      <aside className="hidden w-80 shrink-0 border-l border-slate-200 bg-slate-50/90 p-4 lg:flex lg:flex-col">
+        <div className="flex h-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white p-6 text-center">
+          <div className="mb-4 rounded-2xl bg-indigo-50 p-4 text-indigo-600">
+            <FileText className="h-7 w-7" />
+          </div>
+          <h2 className="text-sm font-bold text-slate-900">Chon mot node de chinh sua</h2>
+          <p className="mt-2 text-xs leading-5 text-slate-500">Thong tin node, thoi gian, notes va hanh dong se hien thi tai day.</p>
+        </div>
+      </aside>
+    );
+  }
 
   const status = getComputedStatus(node);
   const isProjectNode = node.type === "project";
 
   return (
-    <div className="w-64 bg-white border-l border-slate-200 shrink-0 p-4 flex flex-col h-full z-30">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xs font-bold text-slate-800 uppercase">Node Editor</h2>
-        <button onClick={() => setSelectedNode(null)} className="p-1 text-slate-400 hover:text-slate-600 transition-colors" title="Đóng">
-          <X className="w-4 h-4" />
+    <aside className="hidden w-80 shrink-0 border-l border-slate-200 bg-slate-50/90 lg:flex lg:flex-col">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-slate-800">Node Editor</h2>
+            {hasTextChanges && (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                Chua luu
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-[11px] font-medium capitalize text-slate-500">{node.type} / {status}</p>
+        </div>
+        <button onClick={() => setSelectedNode(null)} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" title="Dong editor" aria-label="Dong editor">
+          <X className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="space-y-4 flex-1 overflow-y-auto pr-1">
-        <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Title</label>
-          <input
-            type="text"
-            className="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-md font-medium text-slate-700 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            onBlur={saveTextFields}
-            placeholder="Node title"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
+      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+        <Section title="Thong tin co ban" icon={<Info className="h-3.5 w-3.5" />}>
           <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Type</label>
-            <span className="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-md block capitalize text-slate-600 font-medium">{node.type}</span>
+            <FieldLabel>Title</FieldLabel>
+            <input
+              type="text"
+              className={inputClass}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Node title"
+            />
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <FieldLabel>Type</FieldLabel>
+              <span className="block w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold capitalize text-slate-600">{node.type}</span>
+            </div>
+            <div>
+              <FieldLabel>Status</FieldLabel>
+              <select
+                value={node.status}
+                onChange={(event) => updateNode(node.id, { status: event.target.value as any })}
+                className={inputClass + " capitalize"}
+              >
+                <option value="todo">To Do</option>
+                <option value="doing">Doing</option>
+                <option value="paused">Paused</option>
+                <option value="done">Done</option>
+              </select>
+            </div>
+          </div>
+
           <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Status</label>
+            <FieldLabel>Priority</FieldLabel>
             <select
-              value={node.status}
-              onChange={(event) => updateNode(node.id, { status: event.target.value as any })}
-              className="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-md font-medium text-slate-700 focus:outline-none focus:border-indigo-500 capitalize"
+              value={node.priority}
+              onChange={(event) => updateNode(node.id, { priority: event.target.value as any })}
+              className="w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold capitalize text-amber-700 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
             >
-              <option value="todo">To Do</option>
-              <option value="doing">Doing</option>
-              <option value="paused">Paused</option>
-              <option value="done">Done</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
             </select>
           </div>
-        </div>
+        </Section>
 
-        <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Priority</label>
-          <select
-            value={node.priority}
-            onChange={(event) => updateNode(node.id, { priority: event.target.value as any })}
-            className="w-full text-xs p-2 bg-amber-50 border border-amber-200 rounded-md text-amber-700 font-bold focus:outline-none focus:border-amber-400 capitalize"
-          >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="urgent">Urgent</option>
-          </select>
-        </div>
-
-        <div className="space-y-4">
+        <Section title="Thoi gian" icon={<Clock className="h-3.5 w-3.5" />}>
           <div>
             <div className="flex items-center justify-between">
-              <label className="text-[10px] font-bold text-slate-400 uppercase block">Start Time</label>
-              {node.startTime && (
-                <button onClick={() => updateNode(node.id, { startTime: null })} className="text-[9px] text-slate-400 hover:text-slate-600">Clear</button>
-              )}
+              <FieldLabel>Start time</FieldLabel>
+              {node.startTime && <button onClick={() => updateNode(node.id, { startTime: null })} className="text-[10px] font-bold text-slate-400 hover:text-slate-700">Clear</button>}
             </div>
             <DatePicker
               selected={node.startTime ? parseISO(node.startTime) : null}
@@ -110,8 +162,8 @@ export default function RightPanel() {
               timeIntervals={15}
               timeCaption="Time"
               dateFormat="dd/MM/yyyy HH:mm"
-              className="w-full text-xs bg-slate-50 p-2 border border-slate-200 rounded text-slate-600 font-medium focus:outline-none focus:border-indigo-500"
-              placeholderText="Chọn thời gian bắt đầu"
+              className={inputClass}
+              placeholderText="Chon thoi gian bat dau"
               wrapperClassName="w-full"
               portalId="root"
               popperPlacement="bottom-end"
@@ -120,10 +172,8 @@ export default function RightPanel() {
 
           <div>
             <div className="flex items-center justify-between">
-              <label className="text-[10px] font-bold text-slate-400 uppercase block">Due Time</label>
-              {node.dueTime && (
-                <button onClick={() => updateNode(node.id, { dueTime: null })} className="text-[9px] text-slate-400 hover:text-slate-600">Clear</button>
-              )}
+              <FieldLabel>Due time</FieldLabel>
+              {node.dueTime && <button onClick={() => updateNode(node.id, { dueTime: null })} className="text-[10px] font-bold text-slate-400 hover:text-slate-700">Clear</button>}
             </div>
             <DatePicker
               selected={node.dueTime ? parseISO(node.dueTime) : null}
@@ -133,34 +183,29 @@ export default function RightPanel() {
               timeIntervals={15}
               timeCaption="Time"
               dateFormat="dd/MM/yyyy HH:mm"
-              className="w-full text-xs bg-slate-50 p-2 border border-slate-200 rounded text-slate-600 font-medium focus:outline-none focus:border-indigo-500"
-              placeholderText="Chọn hạn hoàn thành"
+              className={inputClass}
+              placeholderText="Chon han hoan thanh"
               wrapperClassName="w-full"
               portalId="root"
               popperPlacement="bottom-end"
             />
           </div>
-        </div>
+        </Section>
 
         {status === "overdue" && (
-          <div className="bg-rose-50 border border-rose-200 rounded-md p-3 space-y-3 mt-4">
-            <h3 className="text-[11px] font-bold text-rose-700 uppercase flex items-center gap-1">
-              <Clock className="w-3 h-3" /> Công việc đã quá hạn
-            </h3>
-
+          <Section title="Xu ly qua han" icon={<Clock className="h-3.5 w-3.5" />}>
             <div>
-              <label className="text-[10px] font-bold text-rose-600 block mb-1">Lý do trễ hạn</label>
+              <FieldLabel>Ly do tre han</FieldLabel>
               <input
                 type="text"
                 value={node.delayReason || ""}
                 onChange={(event) => updateNode(node.id, { delayReason: event.target.value })}
-                className="w-full text-xs p-2 bg-white border border-rose-200 rounded-md text-slate-700 focus:outline-none focus:border-rose-400"
-                placeholder="Nhập lý do..."
+                className={inputClass}
+                placeholder="Nhap ly do..."
               />
             </div>
-
             <div>
-              <label className="text-[10px] font-bold text-rose-600 block mb-1">Thời gian hoàn thành lại</label>
+              <FieldLabel>Han moi</FieldLabel>
               <DatePicker
                 selected={node.rescheduledTime ? parseISO(node.rescheduledTime) : null}
                 onChange={(date: Date | null) => updateNode(node.id, { rescheduledTime: date ? date.toISOString() : null })}
@@ -169,24 +214,19 @@ export default function RightPanel() {
                 timeIntervals={15}
                 timeCaption="Time"
                 dateFormat="dd/MM/yyyy HH:mm"
-                className="w-full text-xs bg-white p-2 border border-rose-200 rounded-md text-slate-700 focus:outline-none focus:border-rose-400"
-                placeholderText="Chọn hạn mới"
+                className={inputClass}
+                placeholderText="Chon han moi"
                 wrapperClassName="w-full"
                 portalId="root"
                 popperPlacement="bottom-end"
               />
             </div>
-
-            <div>
-              <label className="text-[10px] font-bold text-rose-600 block mb-1">Ghi chú xử lý</label>
-              <textarea
-                value={node.delayNote || ""}
-                onChange={(event) => updateNode(node.id, { delayNote: event.target.value })}
-                className="w-full text-xs p-2 bg-white border border-rose-200 rounded-md text-slate-700 min-h-[60px] resize-y focus:outline-none focus:border-rose-400"
-                placeholder="Nhập ghi chú..."
-              />
-            </div>
-
+            <textarea
+              value={node.delayNote || ""}
+              onChange={(event) => updateNode(node.id, { delayNote: event.target.value })}
+              className={inputClass + " min-h-[70px] resize-y"}
+              placeholder="Ghi chu xu ly..."
+            />
             <button
               onClick={() => {
                 if (node.rescheduledTime) {
@@ -198,43 +238,67 @@ export default function RightPanel() {
                 }
               }}
               disabled={!node.rescheduledTime}
-              className="w-full py-1.5 text-xs font-bold text-white bg-rose-600 rounded-md shadow-sm hover:bg-rose-700 disabled:opacity-50 transition-colors"
+              className="w-full rounded-lg bg-rose-600 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Cập nhật hạn mới
+              Cap nhat han moi
             </button>
-          </div>
+          </Section>
         )}
 
-        <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Notes</label>
+        <Section title="Noi dung" icon={<FileText className="h-3.5 w-3.5" />}>
           <textarea
             value={content}
             onChange={(event) => setContent(event.target.value)}
-            onBlur={saveTextFields}
             placeholder="Add descriptive notes..."
-            className="w-full text-xs border border-slate-200 bg-slate-50 rounded-md p-2 min-h-[80px] resize-y focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors text-slate-700"
+            className={inputClass + " min-h-[110px] resize-y"}
           />
-        </div>
+        </Section>
 
-        <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Tags</label>
-          <div className="flex flex-wrap gap-1">
-            {node.tags.map(tag => (
-              <span key={tag} className="text-[9px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium">{tag}</span>
+        <Section title="Tags" icon={<Tags className="h-3.5 w-3.5" />}>
+          <div className="flex flex-wrap gap-1.5">
+            {(node.tags || []).map(tag => (
+              <span key={tag} className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600">{tag}</span>
             ))}
-            <button className="text-[9px] px-2 py-0.5 border border-dashed border-slate-300 text-slate-400 rounded-full hover:bg-slate-50 transition-colors">+ Add</button>
+            <button className="rounded-full border border-dashed border-slate-300 px-2 py-1 text-[10px] font-bold text-slate-400 transition hover:bg-slate-50">+ Add</button>
+          </div>
+        </Section>
+      </div>
+
+      <div className="sticky bottom-0 border-t border-slate-200 bg-white p-4">
+        <div className="flex gap-2">
+          <button
+            onClick={saveTextFields}
+            disabled={!hasTextChanges}
+            className="flex-1 rounded-lg bg-indigo-600 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+          >
+            Save
+          </button>
+          {!isProjectNode && (
+            <button onClick={() => setShowDeleteConfirm(true)} className="rounded-lg bg-rose-50 px-3 text-rose-600 transition hover:bg-rose-100" title="Delete node" aria-label="Delete node">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="p-5">
+              <h3 className="text-base font-bold text-slate-950">Xoa node nay?</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-500">Tat ca subtask/step con cung se bi xoa. Hanh dong nay khong the hoan tac.</p>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 p-4">
+              <button onClick={() => setShowDeleteConfirm(false)} className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-200">
+                Huy
+              </button>
+              <button onClick={handleDelete} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-rose-700">
+                Xoa node
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div className="pt-4 border-t border-slate-100 flex gap-2 shrink-0 mt-2">
-        <button onClick={saveTextFields} className="flex-1 py-1.5 text-xs font-bold text-white bg-indigo-600 rounded-md shadow-sm hover:bg-indigo-700 transition-colors">Save</button>
-        {!isProjectNode && (
-          <button onClick={handleDelete} className="p-1.5 text-rose-500 bg-rose-50 rounded-md hover:bg-rose-100 transition-colors" title="Delete">
-            <Trash2 className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-    </div>
+      )}
+    </aside>
   );
 }

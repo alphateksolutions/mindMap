@@ -11,6 +11,7 @@ type HandleSide = "top" | "right" | "bottom" | "left";
 const SIDE_HANDLE_OFFSETS = [16, 26, 36, 46, 56, 66, 76, 86];
 const HORIZONTAL_HANDLE_OFFSETS = [18, 34, 50, 66, 82];
 const laneHandleClass = "!w-2 !h-2 !bg-indigo-400 !border-2 !border-white opacity-0 group-hover:opacity-100 transition-opacity";
+const anchorHandleClass = "!w-2.5 !h-2.5 !bg-indigo-500 !border-2 !border-white opacity-0 group-hover:opacity-100 transition-opacity";
 
 function getLaneHandleStyle(side: HandleSide, offset: number) {
   return side === "left" || side === "right" ? { top: `${offset}%` } : { left: `${offset}%` };
@@ -30,6 +31,7 @@ export default function CustomNode({ data, selected }: any) {
   const node = data.node;
   const nodes = useStore(state => state.nodes);
   const status = getComputedStatus(node) as string;
+  const compactNode = (data.zoom as number | undefined) != null && (data.zoom as number) < 0.72;
   const updateNode = useStore(state => state.updateNode);
   const addNode = useStore(state => state.addNode);
   const addEdge = useStore(state => state.addEdge);
@@ -57,6 +59,12 @@ export default function CustomNode({ data, selected }: any) {
   };
 
   const colors = statusColors[status] || statusColors.todo;
+  const typeAccent: Record<string, string> = {
+    project: "bg-indigo-500",
+    task: "bg-sky-500",
+    subtask: "bg-violet-500",
+    step: "bg-emerald-500",
+  };
   const startTimeLabel = formatDateTime(node.startTime);
   const dueTimeLabel = formatDateTime(node.dueTime);
   const compactTimeLabel = formatCompactDateTime(node.startTime);
@@ -127,19 +135,82 @@ export default function CustomNode({ data, selected }: any) {
     ))
   );
 
+  const renderAnchorHandles = () => (
+    <>
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="source-right-center"
+        className={anchorHandleClass}
+        style={{ top: "50%" }}
+      />
+      <Handle
+        type="target"
+        position={Position.Right}
+        id="target-right-center"
+        className={anchorHandleClass}
+        style={{ top: "50%" }}
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="source-left-center"
+        className={anchorHandleClass}
+        style={{ top: "50%" }}
+      />
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="target-left-center"
+        className={anchorHandleClass}
+        style={{ top: "50%" }}
+      />
+      <Handle
+        type="source"
+        position={Position.Top}
+        id="source-top-center"
+        className={anchorHandleClass}
+        style={{ left: "50%" }}
+      />
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="target-top-center"
+        className={anchorHandleClass}
+        style={{ left: "50%" }}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="source-bottom-center"
+        className={anchorHandleClass}
+        style={{ left: "50%" }}
+      />
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        id="target-bottom-center"
+        className={anchorHandleClass}
+        style={{ left: "50%" }}
+      />
+    </>
+  );
+
   return (
     <div
       className={cn(
-        "border shadow-sm relative group transition-all flex flex-col text-slate-800",
+        "border shadow-sm relative group transition-all duration-200 flex flex-col text-slate-800 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:border-indigo-300",
         typeConfig[node.type] || typeConfig.step,
         colors.bg,
-        selected ? `ring-2 ring-indigo-500 ring-offset-1 ${colors.border}` : colors.border
+        selected ? `ring-2 ring-indigo-500 ring-offset-2 shadow-lg shadow-indigo-200/60 ${colors.border}` : colors.border
       )}
     >
+      <div className={cn("absolute bottom-0 left-0 top-0 w-1 rounded-l-[inherit]", typeAccent[node.type] || "bg-slate-400")} />
       {renderLaneHandles("top", Position.Top, HORIZONTAL_HANDLE_OFFSETS)}
       {renderLaneHandles("right", Position.Right, SIDE_HANDLE_OFFSETS)}
       {renderLaneHandles("bottom", Position.Bottom, HORIZONTAL_HANDLE_OFFSETS)}
       {renderLaneHandles("left", Position.Left, SIDE_HANDLE_OFFSETS)}
+      {renderAnchorHandles()}
 
       <div className="absolute -top-3 -right-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 z-10">
         <button
@@ -151,7 +222,7 @@ export default function CustomNode({ data, selected }: any) {
         </button>
       </div>
 
-      <div className="flex items-center justify-between px-3 py-2 border-b border-black/5 shrink-0">
+      <div className="flex items-center justify-between border-b border-black/5 px-3 py-2 pl-4 shrink-0">
         <span className={cn("text-[10px] font-bold uppercase tracking-wider flex items-center gap-1", colors.text)}>
           {node.type}
         </span>
@@ -167,13 +238,13 @@ export default function CustomNode({ data, selected }: any) {
         </div>
       </div>
 
-      <div className="p-3 flex-1 flex flex-col justify-center">
-        <div className={cn("font-bold leading-tight", node.type === "project" ? "text-lg" : "text-sm")}>{data.label}</div>
-        {node.content && (
+      <div className="flex flex-1 flex-col justify-center p-3 pl-4">
+        <div className={cn("font-bold leading-tight text-slate-900", node.type === "project" ? "text-lg" : "text-[15px]")}>{data.label}</div>
+        {!compactNode && node.content && (
           <div className="text-[10px] text-slate-500 mt-1.5 line-clamp-2 leading-tight">{node.content}</div>
         )}
 
-        {node.type === "project" && (
+        {!compactNode && node.type === "project" && (
           <div className="text-[10px] mt-2 font-medium flex items-center justify-between">
             <div>
               <span className="text-slate-500">{descendantCount} công việc</span>
@@ -228,19 +299,19 @@ export default function CustomNode({ data, selected }: any) {
           </div>
         )}
 
-        {(node.type === "project" || node.type === "task" || node.type === "subtask") && descendantCount > 0 && (
+        {!compactNode && (node.type === "project" || node.type === "task" || node.type === "subtask") && descendantCount > 0 && (
           <div className="mt-3 w-full">
             <div className="flex justify-between items-center text-[9px] mb-1">
               <span className="font-semibold opacity-70">Tiến độ</span>
               <span className="font-bold opacity-80">{progress}%</span>
             </div>
-            <div className="h-1.5 w-full bg-slate-200/50 rounded-full overflow-hidden">
-              <div className="h-full bg-current opacity-60 transition-all rounded-full" style={{ width: `${progress}%` }}></div>
+            <div className="h-2 w-full bg-slate-200/70 rounded-full overflow-hidden">
+              <div className="h-full bg-current opacity-75 transition-all rounded-full" style={{ width: `${progress}%` }}></div>
             </div>
           </div>
         )}
 
-        {(startTimeLabel || dueTimeLabel) && (
+        {!compactNode && (startTimeLabel || dueTimeLabel) && (
           <div className="mt-2 space-y-1 rounded-md bg-white/55 px-2 py-1.5 text-[9px] font-semibold leading-tight text-slate-500">
             {startTimeLabel && (
               <div className="flex items-center justify-between gap-2">
@@ -258,7 +329,7 @@ export default function CustomNode({ data, selected }: any) {
         )}
       </div>
 
-      <div className={cn("px-3 py-2 flex items-center justify-between shrink-0 text-[10px] font-medium border-t border-black/5 bg-white/40 group-hover:bg-white/60 transition-colors", colors.text)}>
+      <div className={cn("px-3 py-2 pl-4 flex items-center justify-between shrink-0 text-[10px] font-medium border-t border-black/5 bg-white/45 group-hover:bg-white/70 transition-colors", colors.text)}>
         <div className="flex items-center gap-1.5 capitalize">
           {status === "doing" && <PlayCircle className="w-3 h-3" />}
           {status === "done" && <CheckCircle2 className="w-3 h-3" />}

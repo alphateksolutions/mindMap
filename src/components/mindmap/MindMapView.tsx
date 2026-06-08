@@ -15,14 +15,14 @@ import {
   applyEdgeChanges,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { addDays, differenceInCalendarDays, format, isToday, startOfDay, subDays } from "date-fns";
-import { CalendarDays, ChevronLeft, ChevronRight, Home, LocateFixed, Maximize2 } from "lucide-react";
+import { addDays, differenceInCalendarDays, format, isToday, startOfDay, startOfMonth, subDays } from "date-fns";
+import { CalendarDays, ChevronLeft, ChevronRight, Home, LocateFixed, MapPinned, Maximize2 } from "lucide-react";
 import { useStore } from "../../store/useStore";
 import { createId } from "../../utils/id";
 import { cn } from "../../utils";
-import type { WorkNode } from "../../types";
+import type { WorkEdge, WorkNode } from "../../types";
 import CustomNode from "./CustomNode";
-import SmoothMindMapEdge from "./SmoothMindMapEdge";
+import SmoothMindMapEdge, { calculateAllConnectorRoutes, type ConnectorRoute } from "./SmoothMindMapEdge";
 
 const DEFAULT_VIEWPORT = { x: 360, y: 170, zoom: 1.15 };
 const DAY_WIDTH = 320;
@@ -30,8 +30,6 @@ const DAYS_VISIBLE = 21;
 const NODE_GAP_Y = 34;
 const COLUMN_TOP = 108;
 const FREE_NODE_X = 40;
-const EDGE_SIDE_LANES = 8;
-const EDGE_VERTICAL_LANES = 5;
 
 const nodeTypes = {
   custom: CustomNode,
@@ -92,17 +90,8 @@ function dayIndexForNode(node: WorkNode, timelineStartDate: Date) {
 
 type HandleSide = "top" | "right" | "bottom" | "left";
 
-function getLaneIndex(index: number, laneCount: number) {
-  return ((index % laneCount) + laneCount) % laneCount;
-}
-
-function getHandleId(kind: "source" | "target", side: HandleSide, laneIndex: number) {
-  return `${kind}-${side}-${laneIndex}`;
-}
-
-function getRouteOffset(index: number, total: number) {
-  const rawOffset = (index - (total - 1) / 2) * 34;
-  return Math.max(-120, Math.min(120, rawOffset));
+function getHandleId(kind: "source" | "target", side: HandleSide) {
+  return `${kind}-${side}-center`;
 }
 
 function getDesiredPosition(node: WorkNode, timelineStartDate: Date) {
@@ -221,6 +210,31 @@ function resolveLayout(nodes: WorkNode[], timelineStartDate: Date) {
   };
 }
 
+function createMindMapEdge(edge: WorkEdge, nodeRects: Rect[], connectorRoutes: Map<string, ConnectorRoute>, selectedNodeId?: string | null) {
+  const relationType = edge.type || "parent-child";
+  const route = connectorRoutes.get(edge.id);
+  const sourceSide = route?.sourceSide ?? "right";
+  const targetSide = route?.targetSide ?? "left";
+
+  return {
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: getHandleId("source", sourceSide),
+    targetHandle: getHandleId("target", targetSide),
+    type: "smoothMindMap",
+    data: {
+      type: relationType,
+      nodeRects,
+      routePath: route?.path,
+      busX: route?.busX,
+      usedSegments: route?.segments ?? [],
+      selectedNodeId,
+    },
+    animated: relationType === "next-step",
+  };
+}
+
 function TimelineColumnsBackdrop({
   timelineStartDate,
   viewport,
@@ -248,13 +262,14 @@ function TimelineColumnsBackdrop({
     <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden bg-slate-100 text-slate-400">
       {visibleDayIndexes.map(dayIndex => {
         const day = addDays(timelineStartDate, dayIndex);
+        const isWeekend = day.getDay() === 0 || day.getDay() === 6;
 
         return (
           <div
             key={`column-${dayIndex}`}
             className={cn(
               "absolute bottom-0 top-0 border-r border-slate-200/80",
-              isToday(day) ? "bg-indigo-50/75" : dayIndex % 2 === 0 ? "bg-white" : "bg-slate-50/85"
+              isToday(day) ? "bg-indigo-50/75" : isWeekend ? "bg-slate-100/80" : dayIndex % 2 === 0 ? "bg-white" : "bg-slate-50/85"
             )}
             style={{ left: toScreenX(dayIndex), width: dayWidth }}
           />
@@ -263,13 +278,14 @@ function TimelineColumnsBackdrop({
 
       {visibleDayIndexes.map(dayIndex => {
         const day = addDays(timelineStartDate, dayIndex);
+        const isWeekend = day.getDay() === 0 || day.getDay() === 6;
 
         return (
           <div
             key={`label-${dayIndex}`}
             className={cn(
               "absolute flex h-11 flex-col items-center justify-center rounded-t-md border border-slate-200 bg-white/95 shadow-sm",
-              isToday(day) ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "text-slate-600"
+              isToday(day) ? "border-indigo-200 bg-indigo-50 text-indigo-700" : isWeekend ? "bg-slate-100 text-slate-500" : "text-slate-600"
             )}
             style={{ left: toScreenX(dayIndex), top: 0, width: dayWidth }}
           >
@@ -283,11 +299,12 @@ function TimelineColumnsBackdrop({
 }
 
 export default function MindMapView() {
-  const { projects, nodes, edges, activeProjectId, updateNode, deleteNode, deleteEdge, addEdge, setSelectedNode } = useStore();
+  const { projects, nodes, edges, activeProjectId, selectedNodeId, updateNode, deleteNode, deleteEdge, addEdge, setSelectedNode } = useStore();
   const project = projects.find(item => item.id === activeProjectId);
   const [baseDate, setBaseDate] = useState<Date>(() => startOfDay(new Date()));
   const [flowInstance, setFlowInstance] = useState<any>(null);
   const [viewport, setViewport] = useState(DEFAULT_VIEWPORT);
+  const [showMiniMap, setShowMiniMap] = useState(true);
   const initialFocusProjectId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -301,9 +318,14 @@ export default function MindMapView() {
   const projectEdges = useMemo(() => edges.filter(edge => edge.projectId === activeProjectId), [edges, activeProjectId]);
   const projectRoot = useMemo(() => projectNodes.find(node => node.type === "project" && node.parentId == null), [projectNodes]);
   const layout = useMemo(() => resolveLayout(projectNodes, timelineStartDate), [projectNodes, timelineStartDate]);
+  const connectorRoutes = useMemo(() => calculateAllConnectorRoutes({
+    nodeRects: layout.rects,
+    edges: projectEdges,
+  }), [layout.rects, projectEdges]);
 
   const [rfNodes, setRfNodes] = useNodesState([]);
   const [rfEdges, setRfEdges] = useEdgesState([]);
+  const dragFrameRef = useRef<number | null>(null);
 
   const focusProjectRoot = useCallback(() => {
     if (!flowInstance || !projectRoot) return;
@@ -336,58 +358,70 @@ export default function MindMapView() {
       id: node.id,
       type: "custom",
       position: layout.positions.get(node.id) || node.mindmapPosition || { x: 0, y: 0 },
-      data: { label: node.title, node },
+      data: { label: node.title, node, zoom: viewport.zoom },
       draggable: node.type !== "project" && !node.startTime,
       deletable: node.type !== "project",
     })));
-  }, [layout.positions, projectNodes, setRfNodes]);
+  }, [layout.positions, projectNodes, setRfNodes, viewport.zoom]);
+
+  const syncDraggingEdgeRects = useCallback((nextNodes: RFNode[]) => {
+    if (dragFrameRef.current != null) {
+      window.cancelAnimationFrame(dragFrameRef.current);
+    }
+
+    dragFrameRef.current = window.requestAnimationFrame(() => {
+      const nextRects = nextNodes.map(node => {
+        const workNode = projectNodes.find(item => item.id === node.id);
+        const size = workNode ? getNodeSize(workNode) : { width: Number(node.width) || 0, height: Number(node.height) || 0 };
+
+        return {
+          id: node.id,
+          x: node.position.x,
+          y: node.position.y,
+          width: size.width,
+          height: size.height,
+        };
+      });
+      const connectorRoutes = calculateAllConnectorRoutes({
+        nodeRects: nextRects,
+        edges: projectEdges,
+      });
+      const nextEdgeById = new Map(
+        projectEdges.map(edge => [edge.id, createMindMapEdge(edge, nextRects, connectorRoutes, selectedNodeId)])
+      );
+
+      setRfEdges(currentEdges => currentEdges.map(edge => ({
+        ...edge,
+        ...(nextEdgeById.get(edge.id) ?? {}),
+        data: nextEdgeById.get(edge.id)?.data ?? {
+          ...edge.data,
+          nodeRects: nextRects,
+        },
+      })));
+    });
+  }, [projectEdges, projectNodes, selectedNodeId, setRfEdges]);
+
+  useEffect(() => (
+    () => {
+      if (dragFrameRef.current != null) {
+        window.cancelAnimationFrame(dragFrameRef.current);
+      }
+    }
+  ), []);
 
   useEffect(() => {
-    const edgesBySource = new Map<string, typeof projectEdges>();
-    projectEdges.forEach(edge => {
-      edgesBySource.set(edge.source, [...(edgesBySource.get(edge.source) || []), edge]);
-    });
-
-    setRfEdges(projectEdges.map((edge) => {
-      const relationType = edge.type || "parent-child";
-      const sourcePosition = layout.positions.get(edge.source);
-      const targetPosition = layout.positions.get(edge.target);
-      const isSameColumn = Boolean(sourcePosition && targetPosition && Math.abs(sourcePosition.x - targetPosition.x) < DAY_WIDTH / 2);
-      const targetIsRight = !sourcePosition || !targetPosition || targetPosition.x >= sourcePosition.x;
-      const siblings = (edgesBySource.get(edge.source) || []).sort((a, b) => {
-        const aY = layout.positions.get(a.target)?.y ?? 0;
-        const bY = layout.positions.get(b.target)?.y ?? 0;
-        return aY - bY;
-      });
-      const siblingIndex = Math.max(0, siblings.findIndex(item => item.id === edge.id));
-      const laneCount = isSameColumn ? EDGE_VERTICAL_LANES : EDGE_SIDE_LANES;
-      const laneIndex = getLaneIndex(siblingIndex, laneCount);
-      const sourceSide: HandleSide = isSameColumn ? "bottom" : targetIsRight ? "right" : "left";
-      const targetSide: HandleSide = isSameColumn ? "top" : targetIsRight ? "left" : "right";
-      const sourceHandle = getHandleId("source", sourceSide, laneIndex);
-      const targetHandle = getHandleId("target", targetSide, laneIndex);
-      const routeOffset = getRouteOffset(siblingIndex, siblings.length);
-
-      return {
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        sourceHandle,
-        targetHandle,
-        type: "smoothMindMap",
-        data: {
-          type: relationType,
-          nodeRects: layout.rects,
-          routeOffset,
-        },
-        animated: relationType === "next-step",
-      };
-    }));
-  }, [layout.positions, layout.rects, projectEdges, setRfEdges]);
+    setRfEdges(projectEdges.map(edge => createMindMapEdge(edge, layout.rects, connectorRoutes, selectedNodeId)));
+  }, [connectorRoutes, layout.rects, projectEdges, selectedNodeId, setRfEdges]);
 
   const onNodesChange = useCallback(
-    (changes: NodeChange[]) => setRfNodes(currentNodes => applyNodeChanges(changes, currentNodes)),
-    [setRfNodes]
+    (changes: NodeChange[]) => setRfNodes(currentNodes => {
+      const nextNodes = applyNodeChanges(changes, currentNodes);
+      if (changes.some(change => change.type === "position")) {
+        syncDraggingEdgeRects(nextNodes);
+      }
+      return nextNodes;
+    }),
+    [setRfNodes, syncDraggingEdgeRects]
   );
 
   const onEdgesChange = useCallback(
@@ -402,8 +436,8 @@ export default function MindMapView() {
         type: "smoothMindMap",
         data: { type: "next-step", nodeRects: layout.rects },
         animated: true,
-        sourceHandle: params.sourceHandle || getHandleId("source", "right", 0),
-        targetHandle: params.targetHandle || getHandleId("target", "left", 0),
+        sourceHandle: params.sourceHandle || getHandleId("source", "right"),
+        targetHandle: params.targetHandle || getHandleId("target", "left"),
       };
       setRfEdges(currentEdges => rfAddEdge(newEdge, currentEdges));
 
@@ -413,8 +447,8 @@ export default function MindMapView() {
           projectId: activeProjectId,
           source: params.source,
           target: params.target,
-          sourceHandle: params.sourceHandle || getHandleId("source", "right", 0),
-          targetHandle: params.targetHandle || getHandleId("target", "left", 0),
+          sourceHandle: params.sourceHandle || getHandleId("source", "right"),
+          targetHandle: params.targetHandle || getHandleId("target", "left"),
           type: "next-step",
         });
       }
@@ -508,12 +542,12 @@ export default function MindMapView() {
   }, [projectNodes]);
 
   return (
-    <div className="flex-1 w-full h-full relative bg-slate-100">
+    <div className="flex-1 w-full h-full relative bg-[#F8FAFC]">
       <TimelineColumnsBackdrop timelineStartDate={timelineStartDate} viewport={viewport} />
-      <div className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-2 py-1 shadow-lg shadow-slate-200/80 backdrop-blur">
+      <div className="absolute bottom-5 left-1/2 z-30 flex max-w-[calc(100%-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white/95 px-2 py-2 shadow-xl shadow-slate-200/80 backdrop-blur">
         <button
           onClick={focusProjectRoot}
-          className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-700"
+          className="flex h-8 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white transition hover:bg-indigo-700"
           title="Về node project"
         >
           <Home className="h-3.5 w-3.5" />
@@ -521,36 +555,58 @@ export default function MindMapView() {
         </button>
         <button
           onClick={fitMindMap}
-          className="flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+          className="flex h-8 items-center gap-1.5 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
           title="Fit toàn bộ mindmap"
           aria-label="Fit toàn bộ mindmap"
         >
           <Maximize2 className="h-3.5 w-3.5" />
-          Fit
+          Fit Nodes
         </button>
         <button
           onClick={() => setBaseDate(startOfDay(new Date()))}
-          className="flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+          className="flex h-8 items-center gap-1.5 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
         >
           <LocateFixed className="h-3.5 w-3.5" />
           Hôm nay
         </button>
-        <div className="flex overflow-hidden rounded-md border border-slate-200">
+        <button
+          onClick={() => setBaseDate(startOfDay(new Date()))}
+          className="h-8 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+          title="Tuan nay"
+        >
+          Week
+        </button>
+        <button
+          onClick={() => setBaseDate(startOfMonth(new Date()))}
+          className="h-8 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+          title="Thang nay"
+        >
+          Month
+        </button>
+        <div className="flex h-8 overflow-hidden rounded-lg border border-slate-200">
           <button
             onClick={() => setBaseDate(previous => subDays(previous, 7))}
-            className="border-r border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
+            className="border-r border-slate-200 px-2 text-slate-500 transition hover:bg-slate-50"
             title="Tuần trước"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <button
             onClick={() => setBaseDate(previous => addDays(previous, 7))}
-            className="p-1.5 text-slate-500 hover:bg-slate-50"
+            className="px-2 text-slate-500 transition hover:bg-slate-50"
             title="Tuần sau"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
+        <button
+          onClick={() => setShowMiniMap(previous => !previous)}
+          className="flex h-8 items-center gap-1.5 rounded-lg bg-slate-100 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+          title={showMiniMap ? "An mini map" : "Hien mini map"}
+        >
+          <MapPinned className="h-3.5 w-3.5" />
+          Map
+        </button>
         <div className="ml-1 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
           <CalendarDays className="h-3.5 w-3.5" />
           {format(timelineStartDate, "dd/MM")} - {format(addDays(timelineStartDate, DAYS_VISIBLE - 1), "dd/MM/yyyy")}
@@ -575,13 +631,21 @@ export default function MindMapView() {
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
         onBeforeDelete={onBeforeDelete}
-        minZoom={0.35}
+        minZoom={0.5}
         maxZoom={1.8}
         deleteKeyCode={["Backspace", "Delete"]}
         defaultViewport={DEFAULT_VIEWPORT}
       >
-        <Controls className="!bg-white !border-slate-200 !shadow-sm" />
-        <MiniMap className="!bg-white !border-slate-200 !shadow-sm" />
+        <Controls position="bottom-left" className="!rounded-xl !border !border-slate-200 !bg-white !shadow-lg !shadow-slate-200/70" />
+        {showMiniMap && (
+          <MiniMap
+            className="!rounded-xl !border !border-slate-200 !bg-white !shadow-lg !shadow-slate-200/70"
+            maskColor="rgba(15, 23, 42, 0.08)"
+            nodeColor="#6366F1"
+            pannable
+            zoomable
+          />
+        )}
       </ReactFlow>
     </div>
   );

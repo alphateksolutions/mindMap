@@ -8,7 +8,7 @@ import MindMapView from "../mindmap/MindMapView";
 import ListView from "../list/ListView";
 
 export default function AppShell() {
-  const { activeView, selectedNodeId, undo } = useStore();
+  const { activeView, undo } = useStore();
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -34,14 +34,14 @@ export default function AppShell() {
       <Header />
       <Toolbar />
       <div className="flex-1 flex overflow-hidden relative">
-        <main className="flex-1 flex flex-col relative overflow-hidden bg-white">
+        <main className="flex-1 flex flex-col relative overflow-hidden bg-[#F8FAFC]">
           {activeView === "mindmap" && <MindMapView />}
           {activeView === "list" && <ListView />}
         </main>
-        {selectedNodeId && <RightPanel />}
+        <RightPanel />
       </div>
       {/* Footer Status Bar */}
-      <footer className="h-6 bg-slate-50 border-t border-slate-200 px-4 flex items-center justify-between shrink-0">
+      <footer className="h-6 bg-white border-t border-slate-200 px-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
           <p className="text-[9px] text-slate-400 font-medium">Sync Status: <span className="text-emerald-600">Local Save Complete</span></p>
         </div>
